@@ -36,23 +36,23 @@ from app.application.dsl.dsl_service import DslService
 
 
 def seed_data(db: Session) -> None:
-    print("🌱 Seeding dummy data...")
+    print("Seeding dummy data...")
 
     # 1. Create calendar
-    print("  📅 Creating calendar...")
+    print("  Creating calendar...")
     cal_repo = CalendarRepository(db)
     try:
         cal = cal_repo.create_calendar(
             name="TR Business Calendar",
             description="Turkey business days calendar"
         )
-        print(f"    ✓ Calendar created: {cal.id} - {cal.name}")
+        print(f"    [OK] Calendar created: {cal.id} - {cal.name}")
     except Exception as e:
         # Calendar might already exist, try to get it
         cals = cal_repo.list_calendars()
         if cals:
             cal = cals[0]
-            print(f"    ✓ Using existing calendar: {cal.id} - {cal.name}")
+            print(f"    [OK] Using existing calendar: {cal.id} - {cal.name}")
         else:
             raise
 
@@ -65,12 +65,12 @@ def seed_data(db: Session) -> None:
     for h_date, h_name in holidays:
         try:
             cal_repo.add_holiday(calendar_id=cal.id, holiday_date=h_date, name=h_name)
-            print(f"    ✓ Holiday added: {h_date} - {h_name}")
+            print(f"    [OK] Holiday added: {h_date} - {h_name}")
         except Exception:
             pass  # Already exists
 
     # 2. Create institutions
-    print("  🏢 Creating institutions...")
+    print("  Creating institutions...")
     inst_repo = InstitutionRepository(db)
     
     institutions_data = [
@@ -99,23 +99,23 @@ def seed_data(db: Session) -> None:
         try:
             inst = inst_repo.create(**inst_data)
             institutions.append(inst)
-            print(f"    ✓ Institution created: {inst.external_code} - {inst.display_name}")
+            print(f"    [OK] Institution created: {inst.external_code} - {inst.display_name}")
         except Exception as e:
             # Try to get existing
             existing = inst_repo.list()
             inst = next((i for i in existing if i.external_code == inst_data["external_code"]), None)
             if inst:
                 institutions.append(inst)
-                print(f"    ✓ Using existing institution: {inst.external_code}")
+                print(f"    [OK] Using existing institution: {inst.external_code}")
             else:
-                print(f"    ✗ Failed to create {inst_data['external_code']}: {e}")
+                print(f"    [ERROR] Failed to create {inst_data['external_code']}: {e}")
 
     if not institutions:
-        print("    ⚠ No institutions available!")
+        print("    [WARN] No institutions available!")
         return
 
     # 3. Create profiles for each institution
-    print("  📋 Creating profiles...")
+    print("  Creating profiles...")
     profile_service = ProfileService(db)
     actor_id = "system-seed"
 
@@ -191,7 +191,7 @@ def seed_data(db: Session) -> None:
                 created_by=actor_id,
                 config=config,
             )
-            print(f"    ✓ Profile draft created for {inst.external_code}: v{draft.version_num}")
+            print(f"    [OK] Profile draft created for {inst.external_code}: v{draft.version_num}")
 
             # Approve it
             profile_service.approve_version(
@@ -200,13 +200,13 @@ def seed_data(db: Session) -> None:
                 approved_by=actor_id,
                 approval_reason="Initial seed data",
             )
-            print(f"    ✓ Profile approved for {inst.external_code}")
+            print(f"    [OK] Profile approved for {inst.external_code}")
 
         except Exception as e:
-            print(f"    ✗ Failed to create profile for {inst.external_code}: {e}")
+            print(f"    [ERROR] Failed to create profile for {inst.external_code}: {e}")
 
     # 4. Create DSL rules for first institution
-    print("  🔧 Creating DSL rules...")
+    print("  Creating DSL rules...")
     dsl_service = DslService(db)
     
     if institutions:
@@ -251,14 +251,15 @@ def seed_data(db: Session) -> None:
                 created_by=actor_id,
                 rules_json=rules_json,
             )
-            print(f"    ✓ DSL draft created for {inst.external_code}: v{draft.version_num}")
+            print(f"    [OK] DSL draft created for {inst.external_code}: v{draft.version_num}")
 
             # Validate
-            dsl_service.validate_version(
+            dsl_service.validate_existing_draft(
                 institution_id=inst.id,
                 version_id=draft.id,
+                actor_id=actor_id,
             )
-            print(f"    ✓ DSL validated for {inst.external_code}")
+            print(f"    [OK] DSL validated for {inst.external_code}")
 
             # Approve
             dsl_service.approve_version(
@@ -267,12 +268,12 @@ def seed_data(db: Session) -> None:
                 approved_by=actor_id,
                 approval_reason="Initial seed data",
             )
-            print(f"    ✓ DSL approved for {inst.external_code}")
+            print(f"    [OK] DSL approved for {inst.external_code}")
 
         except Exception as e:
-            print(f"    ✗ Failed to create DSL for {inst.external_code}: {e}")
+            print(f"    [ERROR] Failed to create DSL for {inst.external_code}: {e}")
 
-    print("✅ Seeding complete!")
+    print("[OK] Seeding complete!")
 
 
 if __name__ == "__main__":
@@ -283,7 +284,7 @@ if __name__ == "__main__":
         db.commit()
     except Exception as e:
         db.rollback()
-        print(f"❌ Error: {e}")
+        print(f"[ERROR] Error: {e}")
         raise
     finally:
         db.close()
