@@ -209,6 +209,17 @@ def beat(s: Session, *, ticked: bool = False) -> None:
     s.query(WorkerHeartbeat).filter(WorkerHeartbeat.last_beat_at < now - timedelta(days=1)).delete()
 
 
+def local_worker_alive(s: Session) -> bool:
+    """Container healthcheck: has a worker *in this container* (same hostname) beaten recently?"""
+    host = socket.gethostname()
+    last = s.scalar(
+        select(func.max(WorkerHeartbeat.last_beat_at)).where(WorkerHeartbeat.worker_id.like(f"{host}:%"))
+    )
+    return (
+        last is not None and (clock.now() - last).total_seconds() <= get_settings().worker_stale_after_seconds
+    )
+
+
 def system_status(s: Session) -> dict[str, Any]:
     now = clock.now()
     st = get_settings()

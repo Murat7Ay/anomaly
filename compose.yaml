@@ -56,6 +56,13 @@ services:
   worker:
     <<: *backend
     command: ["python", "-m", "loadguard.worker.main"]
+    # The image's default healthcheck probes HTTP; a worker serves none, so check its own heartbeat instead.
+    healthcheck:
+      test: ["CMD", "python", "-m", "loadguard.ops", "alive"]
+      interval: 15s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
     environment:
       <<: *backend-env
       LG_SIMULATOR_LIVE: ${LG_SIMULATOR_LIVE:-true}
