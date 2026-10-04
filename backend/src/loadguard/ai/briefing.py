@@ -120,7 +120,8 @@ SYSTEM_PROMPT = (
     "Kurallar:\n"
     "- Karar yetkin yok. Uyarının doğru ya da yanlış olduğunu söyleme; şiddetini veya önceliğini değiştirme.\n"
     "- Yalnızca FACTS içindeki bilgileri kullan. FACTS'te olmayan hiçbir sayı, tarih, kurum adı veya olay uydurma.\n"
-    "- Sayıları FACTS'teki değerlerle aynı yaz.\n"
+    "- Sayıları FACTS'teki değerlerden al; Türkçe biçimde ve okunur yuvarlamayla yaz "
+    "(ör. 144.355 TL, %0,16, 1 sa 14 dk). Ham ondalık dizileri kopyalama.\n"
     "- Olası nedenleri olasılık diliyle ifade et; kesin hüküm verme.\n"
     "- Önerilen kontroller somut ve operasyonel olsun; operasyon analistinin hemen yapabileceği adımlar."
 )
@@ -137,6 +138,21 @@ BRIEF_SCHEMA: dict[str, Any] = {
     "required": ["summary", "customer_impact", "likely_causes", "recommended_checks", "confidence"],
     "additionalProperties": False,
 }
+
+
+def _tidy(v: Any) -> Any:
+    """Round floats so the model sees (and repeats) human-scale numbers, not 0.0016508805567020004."""
+    if isinstance(v, bool) or v is None:
+        return v
+    if isinstance(v, float):
+        if v == int(v) and abs(v) >= 1:
+            return int(v)
+        return round(v, 2) if abs(v) >= 1 else round(v, 4)
+    if isinstance(v, dict):
+        return {k: _tidy(x) for k, x in v.items()}
+    if isinstance(v, list | tuple):
+        return [_tidy(x) for x in v]
+    return v
 
 
 def build_facts(s: Session, inc: Incident) -> dict[str, Any]:
@@ -186,7 +202,7 @@ def build_facts(s: Session, inc: Incident) -> dict[str, Any]:
             {"date": o.business_date.isoformat(), "status": o.status, "max_severity": o.max_severity}
             for o in recent
         ]
-    return facts
+    return _tidy(facts)  # type: ignore[no-any-return]
 
 
 def deterministic_brief(inc: Incident, facts: dict[str, Any]) -> dict[str, Any]:

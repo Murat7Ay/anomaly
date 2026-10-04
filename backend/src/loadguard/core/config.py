@@ -10,7 +10,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """All configuration comes from environment variables prefixed with LG_ (12-factor)."""
 
-    model_config = SettingsConfigDict(env_prefix="LG_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="LG_", env_file=".env", extra="ignore", env_ignore_empty=True
+    )
 
     env: Literal["local", "test", "staging", "prod"] = "local"
     log_level: str = "INFO"
@@ -37,7 +39,9 @@ class Settings(BaseSettings):
     ai_base_url: str | None = None
     ai_model: str | None = None
     ai_api_key: SecretStr | None = None
-    ai_timeout_seconds: float = 30.0
+    ai_timeout_seconds: float = 60.0
+    # None = provider default. Some (reasoning) models reject anything else; on-prem models can use 0.
+    ai_temperature: float | None = None
 
     notify_webhook_url: str | None = None
     public_base_url: str = "http://localhost:8080"

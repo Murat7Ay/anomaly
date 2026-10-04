@@ -13,6 +13,7 @@ x-backend: &backend
     LG_AI_BASE_URL: ${LG_AI_BASE_URL:-}
     LG_AI_MODEL: ${LG_AI_MODEL:-}
     LG_AI_API_KEY: ${LG_AI_API_KEY:-}
+    LG_AI_TEMPERATURE: ${LG_AI_TEMPERATURE:-}
     LG_NOTIFY_WEBHOOK_URL: ${LG_NOTIFY_WEBHOOK_URL:-}
     LG_PUBLIC_BASE_URL: http://localhost:8080
   depends_on:

@@ -37,11 +37,16 @@ Seed işlemi 18 kurum için yaklaşık 16 aylık etiketli sentetik geçmiş üre
 # Kurum içinde barındırılan model (veri dışarı çıkmaz): vLLM / TGI / Ollama gibi OpenAI uyumlu sunucu
 LG_AI_PROVIDER=openai_compatible LG_AI_BASE_URL=http://llm.local:8000 LG_AI_MODEL=qwen2.5-32b docker compose up -d
 
+# OpenAI (aynı OpenAI uyumlu sağlayıcı; anahtar ve model ortam değişkenlerinden)
+LG_AI_PROVIDER=openai_compatible LG_AI_BASE_URL=https://api.openai.com LG_AI_MODEL=$OPENAI_MODEL LG_AI_API_KEY=$OPENAI_API_KEY docker compose up -d
+
 # Claude (resmî Anthropic SDK, yapılandırılmış çıktı, varsayılan model claude-opus-5-5)
 LG_AI_PROVIDER=anthropic LG_AI_API_KEY=sk-ant-... docker compose up -d
 ```
 
-YZ kapalıyken her şey çalışır; olay ekranında kural tabanlı kontrol listesi gösterilir.
+`LG_AI_TEMPERATURE` varsayılan olarak gönderilmez (bazı modeller yalnızca varsayılan değeri kabul eder). Deterministik çıktı isteyen yerel modellerde `0` verilebilir. YZ kapalıyken her şey çalışır; olay ekranında kural tabanlı kontrol listesi gösterilir.
+
+Gerçek modelle doğrulama (gpt-6-luna, 9 açık olay): 9/9 özet sayı doğrulamasından geçti, ortalama ~6 sn. Sözleşme yardımcısı iki talimatta da yalnızca istenen alanları değiştirdi ve varsayımlarını listeledi.
 
 ## Entegrasyon: dosya bildirimi
 

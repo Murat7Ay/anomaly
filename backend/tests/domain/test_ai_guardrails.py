@@ -29,3 +29,11 @@ def test_invented_number_is_flagged():
 def test_small_generic_numbers_are_ignored():
     g = check_grounding(["2 iş günü içinde kurumla görüşün; 3 adım izleyin."], {})
     assert g["status"] == "GROUNDED"
+
+
+def test_long_decimals_are_one_number():
+    # Regression: a model echoing a raw float was split into two "numbers" and falsely flagged.
+    assert numbers_in("mükerrer kayıt oranı 0.0016508805567020004.") == [0.0016508805567020004]
+    g = check_grounding(["oran 0.0016508805567020004"], {"ratio": 0.0016508805567020004})
+    assert g["status"] == "GROUNDED"
+    assert numbers_in("tutar 144.355 TL") == [144355.0]

@@ -11,12 +11,18 @@ import re
 from collections.abc import Iterable
 from typing import Any
 
-_NUM = re.compile(r"(?<![\w])[-+]?\d{1,3}(?:[.\s]\d{3})+(?:,\d+)?|[-+]?\d+(?:[.,]\d+)?")
+_NUM = re.compile(
+    r"(?<![\w.,])[-+]?\d+[.,]\d{4,}(?![.,]?\d)"  # long decimal: 0.0016508 / 3,14159
+    r"|(?<![\w])[-+]?\d{1,3}(?:[.\s]\d{3})+(?:,\d+)?(?!\d)"  # Turkish thousands: 1.234.567,89
+    r"|[-+]?\d+(?:[.,]\d+)?"
+)
 SMALL_INT_FREE = 31  # days, hours, list counts... too generic to verify meaningfully
 
 
 def _parse(tok: str) -> float | None:
     t = tok.replace(" ", "")
+    if re.fullmatch(r"[-+]?\d+[.,]\d{4,}", t):
+        return float(t.replace(",", "."))
     if re.fullmatch(r"[-+]?\d{1,3}(?:\.\d{3})+(?:,\d+)?", t):  # Turkish thousands: 1.234.567,89
         t = t.replace(".", "").replace(",", ".")
     elif "," in t and "." not in t:

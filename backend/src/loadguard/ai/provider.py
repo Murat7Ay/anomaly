@@ -88,7 +88,10 @@ class AnthropicProvider:
 
 
 class OpenAICompatibleProvider:
-    """On-prem model server exposing /v1/chat/completions (vLLM, TGI, Ollama...). Data never leaves the organisation."""
+    """Any server exposing /v1/chat/completions with JSON-schema output.
+
+    Typically an on-prem model (vLLM, TGI, Ollama...) so data never leaves the organisation; OpenAI itself works too.
+    """
 
     name = "openai_compatible"
 
@@ -98,6 +101,7 @@ class OpenAICompatibleProvider:
         self._url = settings.ai_base_url.rstrip("/") + "/v1/chat/completions"
         self._model = settings.ai_model or "local-model"
         self._timeout = settings.ai_timeout_seconds
+        self._temperature = settings.ai_temperature
         self._headers = (
             {"Authorization": f"Bearer {settings.ai_api_key.get_secret_value()}"}
             if settings.ai_api_key
@@ -105,19 +109,44 @@ class OpenAICompatibleProvider:
         )
 
     def complete_json(self, *, system: str, user: str, schema: dict[str, Any]) -> AiResult:
-        payload = {
+        payload: dict[str, Any] = {
             "model": self._model,
-            "temperature": 0,
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-            "response_format": {"type": "json_schema", "json_schema": {"name": "output", "schema": schema}},
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {"name": "output", "strict": True, "schema": schema},
+            },
         }
+        if self._temperature is not None:
+            payload["temperature"] = self._temperature
         try:
             r = httpx.post(self._url, json=payload, headers=self._headers, timeout=self._timeout)
-            r.raise_for_status()
+        except httpx.HTTPError as e:
+            raise AiUnavailable(f"Model sunucusuna ulaşılamadı: {type(e).__name__}") from e
+        if r.status_code >= 400:
+            raise AiUnavailable(f"Model hatası ({r.status_code}): {_error_message(r)}")
+        try:
             raw = r.json()
-            return AiResult(json.loads(raw["choices"][0]["message"]["content"]), self.name, raw.get("model"))
-        except (httpx.HTTPError, KeyError, IndexError, json.JSONDecodeError) as e:
-            raise AiUnavailable(f"Yerel model hatası: {type(e).__name__}") from e
+            choice = raw["choices"][0]
+            if choice.get("finish_reason") == "length":
+                raise AiUnavailable("Model yanıtı yarıda kesildi")
+            msg = choice["message"]
+            if msg.get("refusal"):
+                raise AiUnavailable("Model isteği yanıtlamadı")
+            return AiResult(json.loads(msg["content"]), self.name, raw.get("model"))
+        except (KeyError, IndexError, TypeError, json.JSONDecodeError) as e:
+            raise AiUnavailable(f"Model yanıtı çözümlenemedi: {type(e).__name__}") from e
+
+
+def _error_message(r: httpx.Response) -> str:
+    """Provider error text for logs/audit; never includes request headers (no secrets)."""
+    try:
+        body = r.json()
+        err = body.get("error")
+        msg = err.get("message") if isinstance(err, dict) else err or body.get("detail")
+        return str(msg)[:300]
+    except ValueError:
+        return r.text[:300]
 
 
 def get_provider(settings: Settings | None = None) -> LlmProvider:

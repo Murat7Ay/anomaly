@@ -112,7 +112,9 @@ def seed(days: int = 480, *, do_reset: bool = False) -> None:
         _demo_extras(s, now, today)
         from loadguard.services.pipeline import materialize
 
-        materialize(s, today)  # the board shows today's expectations immediately, before the first worker tick
+        materialize(
+            s, today
+        )  # the board shows today's expectations immediately, before the first worker tick
     log.info("seed_done", institutions=len(default_archetypes()), start=start.isoformat())
 
 
