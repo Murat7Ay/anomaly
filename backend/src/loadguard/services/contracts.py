@@ -10,10 +10,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from loadguard.core import clock
+from loadguard.core.config import get_settings
 from loadguard.core.errors import Conflict, Forbidden, Invalid, NotFound
+from loadguard.core.time import ops_today
 from loadguard.db.models import ContractVersion, Incident, Institution, Load, Occurrence
 from loadguard.domain.backtest import Verdict, run_backtest
 from loadguard.domain.contract import ContractSpec
+from loadguard.domain.contract_migrations import load_spec
 from loadguard.domain.inference import InferredContract, infer_contract
 from loadguard.domain.model import LoadFacts
 from loadguard.domain.replay import Label
@@ -37,7 +40,7 @@ def effective_contract(
         .order_by(ContractVersion.effective_from.desc(), ContractVersion.version.desc())
         .limit(1)
     ).first()
-    return (cv, ContractSpec.model_validate(cv.spec)) if cv else None
+    return (cv, load_spec(cv.spec)) if cv else None
 
 
 def _get(s: Session, version_id: uuid.UUID, *, lock: bool = False) -> ContractVersion:
@@ -110,7 +113,7 @@ def submit(s: Session, *, actor: str, version_id: uuid.UUID) -> ContractVersion:
     cv = _get(s, version_id, lock=True)
     if cv.status != "DRAFT":
         raise Conflict("Yalnızca taslak sürümler onaya gönderilebilir")
-    cv.backtest = backtest(s, cv.institution_id, ContractSpec.model_validate(cv.spec))
+    cv.backtest = backtest(s, cv.institution_id, load_spec(cv.spec))
     cv.status, cv.submitted_at = "PENDING_APPROVAL", clock.now()
     audit(s, actor, "contract.submitted", "contract_version", cv.id)
     return cv
@@ -128,7 +131,7 @@ def decide(
         raise Forbidden("Dört göz ilkesi: kendi hazırladığınız sürümü onaylayamazsınız")
     if not approve and not (note and note.strip()):
         raise Invalid("Ret gerekçesi zorunludur")
-    today = local_date(clock.now(), "Europe/Istanbul")
+    today = ops_today()
     cv.status = "APPROVED" if approve else "REJECTED"
     cv.decided_by, cv.decided_at, cv.decision_note = actor, clock.now(), note
     if approve and cv.effective_from < today:
@@ -240,14 +243,19 @@ def infer_from_history(s: Session, institution_id: uuid.UUID, days: int = 180) -
             )
         )
     )
-    today = local_date(now, "Europe/Istanbul")
+    today = ops_today()
+    st = get_settings()
     return infer_contract(
-        arrivals, get_calendar(s), start=today - timedelta(days=days), end=today - timedelta(days=1)
+        arrivals,
+        get_calendar(s, st.default_calendar),
+        tz=st.operating_timezone,
+        start=today - timedelta(days=days),
+        end=today - timedelta(days=1),
     )
 
 
 def tuning_suggestions(s: Session, institution_id: uuid.UUID, days: int = 120) -> list[Suggestion]:
-    eff = effective_contract(s, institution_id, local_date(clock.now(), "Europe/Istanbul"))
+    eff = effective_contract(s, institution_id, ops_today())
     if eff is None:
         return []
     since = clock.now() - timedelta(days=days)

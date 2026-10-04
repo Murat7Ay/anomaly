@@ -67,6 +67,7 @@ export const CODE_LABEL: Record<string, string> = {
   DUPLICATE_RECORDS: "Mükerrer kayıt",
   LIMIT_BREACH: "Kural ihlali",
   SYSTEMIC_OUTAGE: "Toplu kesinti",
+  MIX_SHIFT: "Bileşim kayması",
 };
 
 export const OCC_STATUS_LABEL: Record<string, string> = {

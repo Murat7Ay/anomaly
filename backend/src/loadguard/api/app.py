@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
 
-from loadguard.api.routers import incidents, institutions, ops
+from loadguard.api.routers import governance, incidents, institutions, ops
 from loadguard.core.config import get_settings
 from loadguard.core.errors import AppError
 from loadguard.core.logging import configure_logging, get_logger
@@ -78,7 +78,7 @@ def create_app() -> FastAPI:
         log.exception("unhandled_error", error=str(exc))
         return _problem(500, "internal", "Beklenmeyen bir hata oluştu")
 
-    for r in (ops.router, incidents.router, institutions.router):
+    for r in (ops.router, incidents.router, institutions.router, governance.router):
         app.include_router(r, prefix="/api/v1")
     return app
 

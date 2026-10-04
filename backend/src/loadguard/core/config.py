@@ -43,6 +43,15 @@ class Settings(BaseSettings):
     # None = provider default. Some (reasoning) models reject anything else; on-prem models can use 0.
     ai_temperature: float | None = None
 
+    # Where the operations team lives: "today", dashboards and contract lookups use this zone.
+    # Each contract still carries its own timezone/calendar for the institution's schedule.
+    operating_timezone: str = "Europe/Istanbul"
+    default_calendar: str = "TR"
+
+    # Challenger models evaluated in shadow mode (comma-separated names from domain.challengers).
+    shadow_challengers: str = "mix-shift-v2"
+    worker_stale_after_seconds: int = 120
+
     notify_webhook_url: str | None = None
     public_base_url: str = "http://localhost:8080"
 
@@ -51,6 +60,9 @@ class Settings(BaseSettings):
     simulator_live: bool = Field(
         default=False, description="Demo: ingest planned synthetic loads as time passes"
     )
+
+    def shadow_list(self) -> list[str]:
+        return [x.strip() for x in self.shadow_challengers.split(",") if x.strip()]
 
     def cors_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

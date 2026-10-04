@@ -42,6 +42,7 @@ ANOMALY_KINDS = {
     "ZERO_AMOUNTS": 0.08,
     "NEGATIVE": 0.05,
     "UNEXPECTED": 0.05,
+    "SEGMENT_SHIFT": 0.06,  # a subscriber segment silently drops out; totals look roughly normal
 }
 
 
@@ -511,6 +512,8 @@ def simulate_institution(
             over["zero_amount_count"] = int(records * rng.uniform(0.18, 0.4))
         elif kind == "NEGATIVE":
             over["negative_amount_count"] = rng.randint(3, 250)
+        elif kind == "SEGMENT_SHIFT":
+            over["customer_count"] = int(records * rng.uniform(0.93, 0.97) * rng.uniform(0.62, 0.8))
         lf = mk(d, minutes, records, avg, slot=o.slot_key, **over)
         if kind == "DUPLICATE_FILE" and prev is not None:
             lf = LoadFacts(**{**prev.__dict__, "id": lf.id, "received_at": lf.received_at})

@@ -28,7 +28,13 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install -e ".[dev]"
+      - run: pip install --require-hashes -r requirements-dev.lock && pip install --no-deps -e .
+      - name: Lockfile is in sync with pyproject
+        run: |
+          pip install uv
+          cp requirements.lock /tmp/req.lock  # existing pins are preferences: only pyproject changes cause a diff
+          uv pip compile pyproject.toml --python-version 3.12 --python-platform linux --generate-hashes -q -o /tmp/req.lock
+          diff <(grep -E '^[a-z]' requirements.lock) <(grep -E '^[a-z]' /tmp/req.lock)
       - run: ruff check src tests
       - run: ruff format --check src tests
       - run: mypy src
@@ -52,3 +58,32 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
       - run: npm run build
+
+  e2e:
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start the full stack
+        run: docker compose up -d --build --wait api web
+      - name: Seed demo data
+        run: docker compose run --rm api python -m loadguard.sim.seed --reset
+      - name: Wait for a worker heartbeat
+        run: |
+          for i in $(seq 1 30); do docker compose run --rm api python -m loadguard.ops status >/dev/null && exit 0; sleep 5; done
+          docker compose logs worker; exit 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Playwright
+        working-directory: e2e
+        run: npm install && npx playwright install --with-deps chromium && npx playwright test
+      - name: Trust checks (audit chain, decision reproducibility)
+        run: |
+          docker compose run --rm api python -m loadguard.ops audit-verify
+          docker compose run --rm api python -m loadguard.ops verify-sample --n 200
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: e2e/playwright-report

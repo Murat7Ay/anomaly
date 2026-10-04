@@ -15,7 +15,7 @@ from loadguard.domain.detectors.volume import compute_baselines, detect_volume
 from loadguard.domain.model import Finding, HistoryPoint, OccurrenceStatus, aggregate_metrics
 from loadguard.domain.schedule import local_minutes
 
-ENGINE_VERSION = "engine-2.0.0"
+ENGINE_VERSION = "engine-2.1.0"  # bump on ANY change to detection behaviour (see docs/LONGEVITY.md)
 
 
 @dataclass(frozen=True)

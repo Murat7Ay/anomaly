@@ -16,22 +16,35 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from loadguard.core import clock
+from loadguard.core.config import get_settings
 from loadguard.core.errors import NotFound
-from loadguard.db.models import Evaluation, Incident, Institution, Load, Occurrence
-from loadguard.domain.contract import UNSCHEDULED_SLOT, ContractSpec
+from loadguard.core.logging import get_logger
+from loadguard.core.time import ops_date
+from loadguard.db.models import (
+    Evaluation,
+    Incident,
+    InputSnapshot,
+    Institution,
+    Load,
+    Occurrence,
+    ShadowResult,
+)
+from loadguard.domain.challengers import CHALLENGERS
+from loadguard.domain.contract import UNSCHEDULED_SLOT, ContractSpec, Severity
 from loadguard.domain.detectors.base import EvalContext
 from loadguard.domain.engine import EvalResult, evaluate
 from loadguard.domain.matching import assign_load
 from loadguard.domain.model import HistoryPoint
 from loadguard.domain.replay import HISTORY_DAYS, NON_REPRESENTATIVE_CODES
-from loadguard.domain.schedule import ExpectedOccurrence, expected_occurrences, local_date
+from loadguard.domain.schedule import ExpectedOccurrence, expected_occurrences
+from loadguard.domain.snapshot import fingerprint, to_payload
 from loadguard.domain.systemic import DueOccurrence, detect_systemic
 from loadguard.domain.triage import Priority, demote
 from loadguard.services import incidents as incident_svc
 from loadguard.services.common import audit, enqueue, get_calendar
 from loadguard.services.contracts import effective_contract, to_facts
 
-LOCAL_TZ = ZoneInfo("Europe/Istanbul")
+log = get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -126,7 +139,7 @@ def process_load(s: Session, load_id: uuid.UUID) -> Occurrence | None:
         return None
     # Serialise per institution so two files arriving together cannot claim the same slot.
     inst = s.scalars(select(Institution).where(Institution.id == load.institution_id).with_for_update()).one()
-    tz_day = local_date(load.received_at, "Europe/Istanbul")
+    tz_day = ops_date(load.received_at)
     eff = effective_contract(s, inst.id, tz_day)
     if eff is None:
         load.assignment_reason = "NO_CONTRACT"
@@ -153,8 +166,9 @@ def process_load(s: Session, load_id: uuid.UUID) -> Occurrence | None:
     return occ
 
 
-def _history(s: Session, occ: Occurrence) -> tuple[HistoryPoint, ...]:
-    cal = get_calendar(s)
+def _history(s: Session, occ: Occurrence, spec: ContractSpec) -> tuple[HistoryPoint, ...]:
+    cal = get_calendar(s, spec.calendar)
+    tz = ZoneInfo(spec.timezone)
     rows = s.scalars(
         select(Occurrence)
         .where(
@@ -174,7 +188,7 @@ def _history(s: Session, occ: Occurrence) -> tuple[HistoryPoint, ...]:
         codes = {f["code"] for f in o.findings or []}
         first_min = None
         if o.first_received_at is not None:
-            lt = o.first_received_at.astimezone(LOCAL_TZ)
+            lt = o.first_received_at.astimezone(tz)
             first_min = lt.hour * 60 + lt.minute
         out.append(
             HistoryPoint(
@@ -224,19 +238,18 @@ def evaluate_occurrence(s: Session, inst: Institution, occ: Occurrence, *, trigg
             if any(h == lf.content_hash and t < lf.received_at for h, t in earlier)
         )
     now = clock.now()
-    result = evaluate(
-        EvalContext(
-            spec=spec,
-            calendar=cal,
-            slot_key=occ.slot_key,
-            business_date=occ.business_date,
-            expected=expected,
-            loads=facts,
-            history=_history(s, occ),
-            seen_hashes=seen,
-            now=now,
-        )
+    ctx = EvalContext(
+        spec=spec,
+        calendar=cal,
+        slot_key=occ.slot_key,
+        business_date=occ.business_date,
+        expected=expected,
+        loads=facts,
+        history=_history(s, occ, spec),
+        seen_hashes=seen,
+        now=now,
     )
+    result = evaluate(ctx)
     findings = [f.to_dict() for f in result.findings]
     changed = occ.status != result.status.value or occ.findings != findings or occ.metrics != result.metrics
     occ.status = result.status.value
@@ -246,6 +259,7 @@ def evaluate_occurrence(s: Session, inst: Institution, occ: Occurrence, *, trigg
     occ.load_count = len(loads)
     occ.contract_version_id, occ.spec_hash, occ.evaluated_at = cv.id, cv.spec_hash, now
     if changed or trigger != "DEADLINE_SWEEP":
+        sha = store_snapshot(s, ctx)
         s.add(
             Evaluation(
                 occurrence_id=occ.id,
@@ -254,7 +268,8 @@ def evaluate_occurrence(s: Session, inst: Institution, occ: Occurrence, *, trigg
                 engine_version=result.engine_version,
                 contract_version_id=cv.id,
                 spec_hash=cv.spec_hash,
-                inputs={"load_ids": [str(lf.id) for lf in loads], "history_points": None},
+                inputs={"load_ids": [str(lf.id) for lf in loads], "history_points": len(ctx.history)},
+                snapshot_sha=sha,
                 result={
                     "status": result.status.value,
                     "findings": findings,
@@ -266,7 +281,49 @@ def evaluate_occurrence(s: Session, inst: Institution, occ: Occurrence, *, trigg
     slot = spec.slot(occ.slot_key)
     label = slot.label if slot else "Takvim dışı teslimat"
     incident_svc.reconcile(s, inst=inst, occ=occ, result=result, slot_label=label)
+    run_shadow(s, occ, ctx)
     return result
+
+
+def store_snapshot(s: Session, ctx: EvalContext) -> str:
+    payload = to_payload(ctx)
+    sha = fingerprint(payload)
+    s.execute(insert(InputSnapshot).values(sha256=sha, payload=payload).on_conflict_do_nothing())
+    return sha
+
+
+def run_shadow(s: Session, occ: Occurrence, ctx: EvalContext) -> None:
+    """Evaluate challengers on the same inputs. A failing challenger must never affect the champion."""
+    for name in get_settings().shadow_list():
+        fn = CHALLENGERS.get(name)
+        if fn is None:
+            continue
+        try:
+            with s.begin_nested():
+                r = fn(ctx)
+                codes = sorted({f.code for f in r.findings if f.severity.rank >= Severity.WARNING.rank})
+                s.execute(
+                    insert(ShadowResult)
+                    .values(
+                        occurrence_id=occ.id,
+                        challenger=name,
+                        evaluated_at=ctx.now,
+                        status=r.status.value,
+                        codes=codes,
+                        max_severity=r.max_severity,
+                    )
+                    .on_conflict_do_update(
+                        constraint="uq_shadow_results_occurrence_challenger",
+                        set_={
+                            "evaluated_at": ctx.now,
+                            "status": r.status.value,
+                            "codes": codes,
+                            "max_severity": r.max_severity,
+                        },
+                    )
+                )
+        except Exception:
+            log.exception("shadow_failed", challenger=name, occurrence_id=str(occ.id))
 
 
 # --- periodic work ------------------------------------------------------------------------------------
@@ -316,7 +373,7 @@ def systemic_check(s: Session) -> Incident | None:
     sig = detect_systemic(due, now)
     if sig is None:
         return None
-    day = local_date(now, "Europe/Istanbul")
+    day = ops_date(now)
     fingerprint = f"systemic:{day.isoformat()}"
     parent = s.scalars(
         select(Incident).where(Incident.fingerprint == fingerprint, Incident.status != "RESOLVED")

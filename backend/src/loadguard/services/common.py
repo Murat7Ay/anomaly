@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import time as _time
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from loadguard.core import clock
+from loadguard.core.config import get_settings
 from loadguard.db.models import AuditLog, Holiday, Job
 from loadguard.domain.calendar import BusinessCalendar
 
@@ -18,7 +21,8 @@ _CAL_CACHE: dict[str, tuple[float, BusinessCalendar]] = {}
 _CAL_TTL_S = 300.0
 
 
-def get_calendar(s: Session, code: str = "TR") -> BusinessCalendar:
+def get_calendar(s: Session, code: str | None = None) -> BusinessCalendar:
+    code = code or get_settings().default_calendar
     hit = _CAL_CACHE.get(code)
     if hit and _time.monotonic() - hit[0] < _CAL_TTL_S:
         return hit[1]
@@ -36,17 +40,62 @@ def clear_calendar_cache() -> None:
     _CAL_CACHE.clear()
 
 
-def audit(s: Session, actor: str, action: str, entity_type: str, entity_id: object, **details: Any) -> None:
-    s.add(
-        AuditLog(
-            at=clock.now(),
-            actor=actor,
-            action=action,
-            entity_type=entity_type,
-            entity_id=str(entity_id),
-            details=details,
-        )
+AUDIT_CHAIN_LOCK = 7_340_002
+
+
+def audit_row_hash(
+    prev: str | None, at: datetime, actor: str, action: str, entity_type: str, entity_id: str, details: Any
+) -> str:
+    """Stable forever: changing this breaks verification of every historical row. Version it instead."""
+    body = json.dumps(
+        {
+            "at": at.astimezone(UTC).isoformat(),
+            "actor": actor,
+            "action": action,
+            "entity_type": entity_type,
+            "entity_id": entity_id,
+            "details": details,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        default=str,
     )
+    return hashlib.sha256(f"{prev or ''}|{body}".encode()).hexdigest()
+
+
+def audit(s: Session, actor: str, action: str, entity_type: str, entity_id: object, **details: Any) -> None:
+    """Append a tamper-evident audit row (each row commits to the previous row's hash)."""
+    s.execute(text("select pg_advisory_xact_lock(:k)"), {"k": AUDIT_CHAIN_LOCK})  # serialise chain appends
+    prev = s.scalar(select(AuditLog.row_hash).order_by(AuditLog.id.desc()).limit(1))
+    at = clock.now()
+    details = json.loads(json.dumps(details, default=str))  # exactly what JSONB will return
+    row = AuditLog(
+        at=at,
+        actor=actor,
+        action=action,
+        entity_type=entity_type,
+        entity_id=str(entity_id),
+        details=details,
+        prev_hash=prev,
+        row_hash=audit_row_hash(prev, at, actor, action, entity_type, str(entity_id), details),
+    )
+    s.add(row)
+    s.flush()
+
+
+def verify_audit_chain(s: Session) -> dict[str, Any]:
+    prev: str | None = None
+    n = 0
+    for row in s.scalars(select(AuditLog).order_by(AuditLog.id)).yield_per(1000):
+        n += 1
+        expected = audit_row_hash(
+            prev, row.at, row.actor, row.action, row.entity_type, row.entity_id, row.details
+        )
+        if row.prev_hash != prev or row.row_hash != expected:
+            return {"ok": False, "rows_checked": n, "first_broken_id": row.id}
+        prev = row.row_hash
+    return {"ok": True, "rows_checked": n, "head": prev}
 
 
 # --- job queue (Postgres, FOR UPDATE SKIP LOCKED) -------------------------------------------------

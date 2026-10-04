@@ -25,6 +25,7 @@ from loadguard.db.session import unit_of_work
 from loadguard.services import pipeline
 from loadguard.services.analytics import today
 from loadguard.services.common import claim_jobs, finish_job, requeue_stuck_jobs
+from loadguard.services.governance import beat
 from loadguard.services.notify import notify_incident
 
 log = get_logger(__name__)
@@ -78,6 +79,8 @@ def ingest_planned_sim_loads() -> int:
 
 def tick() -> None:
     with unit_of_work() as s:
+        beat(s, ticked=True)
+    with unit_of_work() as s:
         got = s.scalar(text("select pg_try_advisory_xact_lock(:k)"), {"k": TICK_LOCK_ID})
         if not got:
             return
@@ -107,8 +110,13 @@ def main() -> None:
     signal.signal(signal.SIGINT, stop)
     log.info("worker_started", ai_provider=st.ai_provider, simulator_live=st.simulator_live)
     last_tick = 0.0
+    last_beat = 0.0
     while _running:
         try:
+            if time.monotonic() - last_beat >= 10:
+                with unit_of_work() as s:
+                    beat(s)
+                last_beat = time.monotonic()
             if time.monotonic() - last_tick >= st.worker_tick_seconds:
                 tick()
                 last_tick = time.monotonic()

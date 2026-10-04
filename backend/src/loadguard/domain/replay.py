@@ -64,6 +64,7 @@ def replay(
     now: datetime,
     labels: dict[tuple[str, date], str] | None = None,
     slot_hints: dict[str, str] | None = None,
+    engine: Callable[[EvalContext], EvalResult] = evaluate,
 ) -> list[ReplayOccurrence]:
     """Replay [start, end]. Loads before `start` are used to warm up history but are not reported."""
     labels = labels or {}
@@ -107,7 +108,7 @@ def replay(
         lookback = occ.business_date - timedelta(days=max(spec.learning.lookback_days, HISTORY_DAYS))
         hist = tuple(p for p in history[occ.slot_key] if p.business_date >= lookback)
         seen = frozenset(lf.content_hash for lf in occ.loads if first_seen[lf.content_hash] < lf.received_at)
-        occ.result = evaluate(
+        occ.result = engine(
             EvalContext(
                 spec=spec,
                 calendar=calendar,

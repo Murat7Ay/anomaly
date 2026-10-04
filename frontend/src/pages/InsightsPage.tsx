@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api } from "../api/client";
+import type { ShadowReport } from "../api/types";
 import { ErrorBox, Kpi, Loading, Section } from "../components/bits";
 import { CODE_LABEL, pct } from "../lib/fmt";
 
@@ -51,6 +52,7 @@ const KIND_LABEL: Record<string, string> = {
   NEGATIVE: "Negatif tutarlar",
   UNEXPECTED: "Takvim dışı teslimat",
   SYSTEMIC_OUTAGE: "Toplu kesinti",
+  SEGMENT_SHIFT: "Segment kaybı",
 };
 
 function QualityTable({ rows, label }: { rows: (Row & { name: string })[]; label: string }) {
@@ -90,6 +92,7 @@ export function InsightsPage() {
   const theme = useTheme();
   const q = useQuery({ queryKey: ["insights"], queryFn: () => api<Insights>("/insights", { query: { days: 120 } }) });
   const tuning = useQuery({ queryKey: ["tuning"], queryFn: () => api<TuningRow[]>("/tuning") });
+  const shadow = useQuery({ queryKey: ["shadow"], queryFn: () => api<ShadowReport[]>("/insights/shadow") });
   if (q.isLoading) return <Loading rows={8} />;
   if (q.isError) return <ErrorBox error={q.error} />;
   const d = q.data!;
@@ -113,6 +116,60 @@ export function InsightsPage() {
         {sim && <Kpi label="Yakalama oranı (simülasyon)" value={pct(simTotal ? simCaught / simTotal : null, 0)} hint={`${simCaught}/${simTotal} enjekte anomali`} />}
         <Kpi label="Bekleyen ayar önerisi" value={tuning.data?.length ?? "…"} />
       </Stack>
+
+      {shadow.data?.map((r) => {
+        const a = r.agreement;
+        const t = r.truth;
+        return (
+          <Section key={r.challenger} title={`Gölge model: ${r.challenger}`}>
+            <Alert severity="info" sx={{ mb: 1.5 }}>
+              Gölge model aynı teslimatları ana modelle birlikte değerlendirir ama kimseyi uyarmaz. Analist kararları ve ölçümlerle
+              kendini kanıtlarsa, kalite kapısından geçen normal bir sürümle ana modele terfi eder.
+            </Alert>
+            <Stack direction="row" spacing={1.5} useFlexGap flexWrap="wrap" sx={{ mb: 1.5 }}>
+              <Kpi label="Değerlendirilen teslimat" value={r.evaluated} />
+              <Kpi label="İkisi de uyardı" value={a.both ?? 0} />
+              <Kpi label="Yalnız ana model" value={a.champion_only ?? 0} />
+              <Kpi label="Yalnız gölge model" value={a.challenger_only ?? 0} tone="#7e57c2" />
+              {t && (
+                <Kpi
+                  label="Yakalanan gerçek sorun (simülasyon)"
+                  value={`${t.challenger_caught ?? 0} / ${t.champion_caught ?? 0}`}
+                  hint={`${t.issues ?? 0} sorun · gölge / ana`}
+                />
+              )}
+              {t && (
+                <Kpi
+                  label="Uyarı kesinliği (simülasyon)"
+                  value={`${pct(t.challenger_alerts ? (t.challenger_true ?? 0) / t.challenger_alerts : null, 0)} / ${pct(
+                    t.champion_alerts ? (t.champion_true ?? 0) / t.champion_alerts : null,
+                    0,
+                  )}`}
+                  hint="gölge / ana"
+                />
+              )}
+            </Stack>
+            {r.only_challenger.length > 0 && (
+              <>
+                <Typography variant="subtitle2">Yalnızca gölge modelin uyardığı teslimatlar (incelemeye değer)</Typography>
+                <Table size="small">
+                  <TableBody>
+                    {r.only_challenger.slice(0, 8).map((o) => (
+                      <TableRow key={o.occurrence_id}>
+                        <TableCell>
+                          <Link to={`/institutions/${o.institution_id}`}>{o.institution}</Link>
+                        </TableCell>
+                        <TableCell>{o.business_date.split("-").reverse().join(".")}</TableCell>
+                        <TableCell>{o.codes.map((c) => CODE_LABEL[c] ?? c).join(", ")}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </>
+            )}
+          </Section>
+        );
+      })}
 
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, lg: 7 }}>

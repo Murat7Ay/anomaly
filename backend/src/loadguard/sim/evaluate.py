@@ -10,11 +10,14 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter, defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 
 from loadguard.domain.contract import Severity
+from loadguard.domain.detectors.base import EvalContext
+from loadguard.domain.engine import EvalResult, evaluate
 from loadguard.domain.holidays_tr import tr_calendar
 from loadguard.domain.replay import Label, replay
 from loadguard.sim.simulator import Archetype, default_archetypes, pick_outage_days, simulate_institution
@@ -31,6 +34,7 @@ EXPECTED_CODE = {
     "NEGATIVE": {"NEGATIVE_AMOUNTS"},
     "UNEXPECTED": {"UNEXPECTED_DELIVERY"},
     "SYSTEMIC_OUTAGE": {"LATE_DELIVERY"},
+    "SEGMENT_SHIFT": {"VOLUME_LOW", "MIX_SHIFT"},
 }
 BENIGN = {"LEVEL_SHIFT", "PARTIAL_HEALED"}
 
@@ -71,7 +75,12 @@ class QualityReport:
 
 
 def evaluate_quality(
-    *, days: int = 480, seed: int = 7, archetypes: list[Archetype] | None = None, use_labels: bool = True
+    *,
+    days: int = 480,
+    seed: int = 7,
+    archetypes: list[Archetype] | None = None,
+    use_labels: bool = True,
+    engine: Callable[[EvalContext], EvalResult] = evaluate,
 ) -> QualityReport:
     cal = tr_calendar()
     end = date(2026, 9, 30)
@@ -103,6 +112,7 @@ def evaluate_quality(
             now=now,
             labels=labels,
             slot_hints={s.facts.id: s.slot_hint for s in sim_loads if s.slot_hint},
+            engine=engine,
         )
         for occ in results:
             assert occ.result is not None
@@ -147,8 +157,12 @@ def main() -> None:
     p.add_argument("--days", type=int, default=480)
     p.add_argument("--seed", type=int, default=7)
     p.add_argument("--no-labels", action="store_true", help="simulate no analyst feedback")
+    p.add_argument("--challenger", help="evaluate a registered challenger instead of the champion")
     args = p.parse_args()
-    rep = evaluate_quality(days=args.days, seed=args.seed, use_labels=not args.no_labels)
+    from loadguard.domain.challengers import CHALLENGERS
+
+    engine = CHALLENGERS[args.challenger] if args.challenger else evaluate
+    rep = evaluate_quality(days=args.days, seed=args.seed, use_labels=not args.no_labels, engine=engine)
     print(json.dumps(rep.to_dict(), indent=2, ensure_ascii=False))
 
 

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "timezone": "Europe/Istanbul",
+  "schedule": ["before 6am on monday"],
+  "prConcurrentLimit": 5,
+  "packageRules": [
+    { "matchManagers": ["pip_requirements", "pep621"], "groupName": "python minor/patch", "matchUpdateTypes": ["minor", "patch"] },
+    { "matchManagers": ["npm"], "groupName": "frontend minor/patch", "matchUpdateTypes": ["minor", "patch"] },
+    { "matchUpdateTypes": ["major"], "dependencyDashboardApproval": true },
+    { "matchPackageNames": ["numpy", "scipy"], "description": "numeric libs can change floating point results: verify-sample must pass", "dependencyDashboardApproval": true }
+  ],
+  "lockFileMaintenance": { "enabled": true }
+}

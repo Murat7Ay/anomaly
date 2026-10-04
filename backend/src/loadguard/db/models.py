@@ -158,6 +158,41 @@ class Evaluation(Base):
     spec_hash: Mapped[str | None] = mapped_column(String(64))
     inputs: Mapped[dict[str, Any]]
     result: Mapped[dict[str, Any]]
+    snapshot_sha: Mapped[str | None] = mapped_column(ForeignKey("input_snapshots.sha256"), index=True)
+
+
+class InputSnapshot(Base):
+    """Content-addressed, immutable copy of everything an evaluation saw (see domain/snapshot.py)."""
+
+    __tablename__ = "input_snapshots"
+    sha256: Mapped[str] = mapped_column(String(64), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    payload: Mapped[dict[str, Any]]
+
+
+class ShadowResult(Base):
+    """What a challenger model would have decided. Never pages anyone; used to earn promotion."""
+
+    __tablename__ = "shadow_results"
+    __table_args__ = (UniqueConstraint("occurrence_id", "challenger"),)
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    occurrence_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("occurrences.id"), index=True)
+    challenger: Mapped[str] = mapped_column(String(48))
+    evaluated_at: Mapped[datetime]
+    status: Mapped[str] = mapped_column(String(16))
+    codes: Mapped[list[Any]] = mapped_column(default=list)
+    max_severity: Mapped[str | None] = mapped_column(String(16))
+
+
+class WorkerHeartbeat(Base):
+    """Who watches the watcher: a silent worker is the most dangerous failure of a monitoring system."""
+
+    __tablename__ = "worker_heartbeats"
+    worker_id: Mapped[str] = mapped_column(String(96), primary_key=True)
+    started_at: Mapped[datetime]
+    last_beat_at: Mapped[datetime]
+    last_tick_at: Mapped[datetime | None]
+    version: Mapped[str] = mapped_column(String(32))
 
 
 class Incident(Base):
@@ -249,6 +284,9 @@ class AuditLog(Base):
     entity_type: Mapped[str] = mapped_column(String(32))
     entity_id: Mapped[str] = mapped_column(String(64), index=True)
     details: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    # Tamper evidence: each row commits to the previous one (verify with services.common.verify_audit_chain).
+    prev_hash: Mapped[str | None] = mapped_column(String(64))
+    row_hash: Mapped[str] = mapped_column(String(64), default="")
 
 
 class AiInteraction(Base):

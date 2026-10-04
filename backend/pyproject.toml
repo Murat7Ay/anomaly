@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "loadguard"
-version = "2.0.0"
+version = "2.1.0"
 description = "Debt-load delivery monitoring for bill collection: explainable detection, case management, advisory AI."
 requires-python = ">=3.12"
 dependencies = [

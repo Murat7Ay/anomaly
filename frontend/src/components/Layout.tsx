@@ -1,4 +1,5 @@
 import {
+  Alert,
   AppBar,
   Avatar,
   Badge,
@@ -30,7 +31,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
 import { api } from "../api/client";
-import type { ContractVersion, Meta } from "../api/types";
+import type { ContractVersion, Meta, SystemStatus } from "../api/types";
 import { useAuth } from "../auth";
 import { ROLE_LABEL } from "../lib/fmt";
 
@@ -48,6 +49,12 @@ export function Layout({ mode, toggleMode }: { mode: "light" | "dark"; toggleMod
     refetchInterval: 60_000,
   });
   const meta = useQuery({ queryKey: ["meta"], queryFn: () => api<Meta>("/meta"), staleTime: Infinity });
+  const system = useQuery({
+    queryKey: ["system"],
+    queryFn: () => api<SystemStatus>("/system/status"),
+    refetchInterval: 30_000,
+  });
+  const sys = system.data;
 
   const nav = [
     { to: "/", label: "Gelen kutusu", icon: <InboxIcon />, match: (p: string) => p === "/" || p.startsWith("/incidents") },
@@ -104,6 +111,11 @@ export function Layout({ mode, toggleMode }: { mode: "light" | "dark"; toggleMod
         <Typography variant="caption" color="text.secondary" display="block">
           Yapay zekâ danışman rolündedir; karar yetkisi yoktur.
         </Typography>
+        {sys && (
+          <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+            Motor {sys.engine_version} · uygulama {sys.app_version}
+          </Typography>
+        )}
       </Box>
     </Box>
   );
@@ -154,6 +166,19 @@ export function Layout({ mode, toggleMode }: { mode: "light" | "dark"; toggleMod
             )}
           </Toolbar>
         </AppBar>
+        {sys && !sys.worker.alive && (
+          <Alert severity="error" variant="filled" square>
+            İzleme çalışmıyor: son nabız{" "}
+            {sys.worker.last_beat_age_seconds != null ? `${Math.round(sys.worker.last_beat_age_seconds / 60)} dk önce` : "hiç alınmadı"}. Yeni
+            dosyalar değerlendirilmiyor ve gelmeyen dosyalar tespit edilmiyor. Worker servisini kontrol edin.
+          </Alert>
+        )}
+        {sys && sys.worker.alive && (sys.queue.oldest_ready_age_seconds > 300 || sys.queue.failed_24h > 0) && (
+          <Alert severity="warning" square>
+            İş kuyruğu gecikiyor ({sys.queue.queued} bekleyen, en eski {Math.round(sys.queue.oldest_ready_age_seconds / 60)} dk) veya son 24 saatte{" "}
+            {sys.queue.failed_24h} iş başarısız oldu.
+          </Alert>
+        )}
         <Box component="main" sx={{ p: { xs: 2, md: 3 }, maxWidth: 1500, mx: "auto" }}>
           <Outlet />
         </Box>

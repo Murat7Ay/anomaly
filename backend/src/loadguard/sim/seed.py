@@ -20,6 +20,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select, text
 
 from loadguard.core import clock
+from loadguard.core.config import get_settings
 from loadguard.core.logging import configure_logging, get_logger
 from loadguard.db.models import (
     ContractVersion,
@@ -30,13 +31,16 @@ from loadguard.db.models import (
     Institution,
     Load,
     Occurrence,
+    ShadowResult,
     SimPlannedLoad,
     SimTruth,
     Suppression,
     User,
 )
 from loadguard.db.session import unit_of_work
+from loadguard.domain.challengers import CHALLENGERS
 from loadguard.domain.contract import Sensitivity, Severity
+from loadguard.domain.contract_migrations import load_spec
 from loadguard.domain.holidays_tr import tr_calendar, tr_holidays
 from loadguard.domain.model import Category
 from loadguard.domain.replay import Label, replay
@@ -63,7 +67,7 @@ USERS = [
 def reset(s) -> None:  # type: ignore[no-untyped-def]
     s.execute(
         text(
-            "TRUNCATE incident_events, notifications, incidents, evaluations, loads, occurrences, contract_versions, "
+            "TRUNCATE shadow_results, worker_heartbeats, input_snapshots, incident_events, notifications, incidents, evaluations, loads, occurrences, contract_versions, "
             "sim_planned_loads, sim_truths, suppressions, ai_interactions, jobs, audit_log, institutions, holidays, users "
             "RESTART IDENTITY CASCADE"
         )
@@ -255,6 +259,7 @@ def _seed_institution(a, cal, start, today, now, outages, rng, forced=None) -> N
             s.add(occ)
             persisted.append((ro, occ))
         s.flush()  # occurrences must exist before rows referencing them (no ORM relationships here)
+        _seed_shadow(s, a, cal, facts_hist, start, today, yesterday_end, labels, sim_loads, persisted)
         for ro, occ in persisted:
             r = ro.result
             assert r is not None
@@ -279,6 +284,44 @@ def _seed_institution(a, cal, start, today, now, outages, rng, forced=None) -> N
                 )
         s.flush()
         log.info("seeded_institution", code=a.code, loads=len(load_rows), occurrences=len(results))
+
+
+def _seed_shadow(s, a, cal, facts, start, today, now, labels, sim_loads, persisted) -> None:  # type: ignore[no-untyped-def]
+    """Shadow history: what each configured challenger would have said on the same deliveries."""
+    window_start = today - timedelta(days=150)
+    occ_by_key = {
+        (ro.slot_key, ro.business_date): occ for ro, occ in persisted if ro.business_date >= window_start
+    }
+    for name in get_settings().shadow_list():
+        engine = CHALLENGERS.get(name)
+        if engine is None:
+            continue
+        for ro in replay(
+            spec_for=lambda _d: a.spec,
+            calendar=cal,
+            loads=facts,
+            start=window_start,
+            end=today - timedelta(days=1),
+            now=now,
+            labels=labels,
+            slot_hints={sl.facts.id: sl.slot_hint for sl in sim_loads if sl.slot_hint},
+            engine=engine,
+        ):
+            occ = occ_by_key.get((ro.slot_key, ro.business_date))
+            if occ is None or ro.result is None:
+                continue
+            s.add(
+                ShadowResult(
+                    occurrence_id=occ.id,
+                    challenger=name,
+                    evaluated_at=now,
+                    status=ro.result.status.value,
+                    codes=sorted(
+                        {f.code for f in ro.result.findings if f.severity.rank >= Severity.WARNING.rank}
+                    ),
+                    max_severity=ro.result.max_severity,
+                )
+            )
 
 
 def days_between(a: date, b: date) -> int:
@@ -393,9 +436,8 @@ def _demo_extras(s, now: datetime, today: date) -> None:  # type: ignore[no-unty
     # A pending four-eyes approval with a real backtest: relax the noisy biller's sensitivity.
     inst = s.scalars(select(Institution).where(Institution.code == "BLD01")).one()
     cur = s.scalars(select(ContractVersion).where(ContractVersion.institution_id == inst.id)).one()
-    from loadguard.domain.contract import ContractSpec
 
-    spec = ContractSpec.model_validate(cur.spec)
+    spec = load_spec(cur.spec)
     relaxed = spec.model_copy(
         update={
             "metrics": [

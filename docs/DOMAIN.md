@@ -130,18 +130,17 @@ Karar verirken açıklama zorunludur (yanlış alarm, yeni normal, bilinen olay)
 
 ## 9. Ölçülen kalite (sentetik, etiketli veri)
 
-18 kurum arketipi, 480 gün, 3.506 teslimat. Enjekte anomaliler: gelmedi, geç, kısmi, sıçrama, birim hatası, mükerrer, bayat, sıfır/negatif, takvim dışı, toplu kesinti. Zor vakalar da vardır: tarife kaynaklı kalıcı artış, ısınma sezonu, gürültülü kurumlar.
+18 kurum arketipi, 480 gün, yaklaşık 3.500 teslimat. Enjekte anomaliler: gelmedi, geç, kısmi, sıçrama, birim hatası, mükerrer, bayat, sıfır/negatif, takvim dışı, toplu kesinti, segment kaybı. Zor vakalar da vardır: tarife kaynaklı kalıcı artış, ısınma sezonu, gürültülü kurumlar.
 
-| Ölçü | Değer |
-|---|---|
-| Genel yakalama oranı | **%97,7** |
-| Uyarı kesinliği | **%88** |
-| 100 teslimat başına yanlış alarm | **0,48** |
-| Gelmedi / geç / mükerrer / birim / bayat / negatif / toplu kesinti | %100 |
-| Kısmi dosya | 14/15 · Hacim sıçraması 12/14 |
-| Kendiliğinden tamamlanan kısmi dosyada açık kalan uyarı | 0 |
+| Ölçü | Ana model | Gölge `mix-shift-v2` |
+|---|---|---|
+| Genel yakalama oranı | %95,9 | **%99,2** |
+| Uyarı kesinliği | %84,2 | %84,6 |
+| 100 teslimat başına yanlış alarm | 0,63 | 0,63 |
+| Segment kaybı | 3/7 | 7/7 |
+| Gelmedi / geç / mükerrer / birim / bayat / negatif / toplu kesinti | %100 | %100 |
 
-Bu sayılar CI'da **kalite kapısıdır** (`tests/domain/test_quality_regression.py`): yakalama oranı <%93, kesinlik <%80 veya 100 teslimatta >1 yanlış alarm olursa build kırılır. Sentetik veri gerçek dünyanın yerini tutmaz. Canlı ortamda aynı ölçüler analist kararlarından hesaplanır (İçgörü ekranı).
+Ana model metrikleri CI'da **kalite kapısıdır** (`tests/domain/test_quality_regression.py`): yakalama oranı <%93, kesinlik <%80 veya 100 teslimatta >1 yanlış alarm olursa build kırılır. Gölge model süreci için bkz. [LONGEVITY.md](LONGEVITY.md). Sentetik veri gerçek dünyanın yerini tutmaz; canlı ortamda aynı ölçüler analist kararlarından hesaplanır (İçgörü ekranı).
 
 ## 10. Beş yıllık yol haritası
 

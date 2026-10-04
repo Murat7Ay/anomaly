@@ -7,7 +7,7 @@ Fatura tahsilatı yapılan kurumların (elektrik, su, doğalgaz, telekom, kamu�
 - **Kapalı öğrenme döngüsü:** analist kararı → öğrenme → ayar önerisi → geriye dönük test → dört göz onayı.
 - **Danışman yapay zekâ:** özet ve doğal dilden sözleşme taslağı. Karar yetkisi yoktur; sayı doğrulaması yapılır ve her çağrı kaydedilir.
 
-İş analizi: [docs/DOMAIN.md](docs/DOMAIN.md) · Mimari ve kararlar: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+İş analizi: [docs/DOMAIN.md](docs/DOMAIN.md) · Mimari: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · 10 yıllık tasarım ve yol haritası: [docs/LONGEVITY.md](docs/LONGEVITY.md)
 
 ## Hızlı başlangıç (Docker)
 
@@ -58,6 +58,22 @@ curl -X POST http://localhost:8080/api/v1/ingest/loads -H "X-Api-Key: dev-ingest
 
 `external_id` idempotenttir; aynı bildirim iki kez gelirse yok sayılır.
 
+## Operasyon ve güven kontrolleri
+
+```bash
+docker compose run --rm api python -m loadguard.ops status
+```
+
+```bash
+docker compose run --rm api python -m loadguard.ops audit-verify
+```
+
+```bash
+docker compose run --rm api python -m loadguard.ops verify-sample --n 500
+```
+
+`status` worker nabzını ve kuyruğu kontrol eder. `audit-verify` denetim kaydının hash zincirini doğrular. `verify-sample` kayıtlı kararları bugünkü motorla yeniden üretir; motor yükseltmesinden önce çalıştırılmalıdır. Üçü de sorun olduğunda sıfırdan farklı çıkış kodu döndürür, dağıtım hattına bağlanabilir. Prometheus metrikleri: `/api/v1/metrics`.
+
 ## Geliştirme
 
 ```bash
@@ -80,15 +96,21 @@ cd backend && .venv/Scripts/python -m loadguard.sim.evaluate
 cd frontend && npm install && npm run dev
 ```
 
+```bash
+cd e2e && npm install && npx playwright install chromium && npx playwright test
+```
+
+Python bağımlılıkları `backend/requirements.lock` dosyasında hash'leriyle kilitlidir. Güncellemeleri Renovate haftalık PR olarak açar.
+
 Yerel geliştirmede API `uvicorn loadguard.api.app:app --app-dir src --port 8000`, worker `python -m loadguard.worker.main` ile çalışır. Vite `/api` isteklerini 8000'e yönlendirir.
 
 ## Kalite
 
 | | |
 |---|---|
-| Testler | 59 test: alan birim testleri, Postgres entegrasyon testleri, YZ güvenlik önlemleri, dedektör kalite kapısı |
+| Testler | 74 backend testi (alan birim testleri, gerçek migration'larla Postgres entegrasyonu, YZ güvenlik önlemleri, karar yeniden üretimi, denetim zinciri, kalite kapısı) + 4 E2E (Playwright) |
 | Statik analiz | `mypy --strict`, `ruff`, `tsc --strict` |
-| Dedektör kalitesi (sentetik, 480 gün) | yakalama %97,7 · kesinlik %88 · 100 teslimatta 0,48 yanlış alarm |
+| Dedektör kalitesi (sentetik, 480 gün, segment kaybı dahil) | ana model: yakalama %95,9 · kesinlik %84 · 100 teslimatta 0,63 yanlış alarm; gölge `mix-shift-v2`: yakalama %99,2, aynı gürültü |
 
 ## Yapı
 

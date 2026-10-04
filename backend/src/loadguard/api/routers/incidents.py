@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 from loadguard.ai.briefing import brief_view, generate_brief
 from loadguard.api.deps import DB, CurrentUser
 from loadguard.api.schemas import AssignIn, CommentIn, ResolveIn, iso
-from loadguard.db.models import Incident, IncidentEvent, Institution, Load, Occurrence
+from loadguard.db.models import Evaluation, Incident, IncidentEvent, Institution, Load, Occurrence
 from loadguard.services import incidents as svc
 from loadguard.services.analytics import institution_series
 from loadguard.services.contracts import effective_contract
@@ -147,6 +147,20 @@ def get_incident(incident_id: uuid.UUID, s: DB, _: CurrentUser) -> dict[str, Any
                 for lf in loads
             ],
         }
+        out["evaluations"] = [
+            {
+                "id": str(e.id),
+                "trigger": e.trigger,
+                "evaluated_at": iso(e.evaluated_at),
+                "engine_version": e.engine_version,
+                "verifiable": e.snapshot_sha is not None,
+            }
+            for e in s.scalars(
+                select(Evaluation)
+                .where(Evaluation.occurrence_id == occ.id)
+                .order_by(Evaluation.evaluated_at.desc())
+            )
+        ]
         out["series"] = [
             p
             for p in institution_series(s, occ.institution_id, "record_count", 120)

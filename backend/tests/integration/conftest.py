@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from collections.abc import Iterator
 from datetime import UTC, date, datetime, time, timedelta
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import psycopg
@@ -53,8 +54,14 @@ def database() -> Iterator[None]:
     _ensure_database()
     get_settings.cache_clear()
     engine.cache_clear()
-    Base.metadata.drop_all(engine())
-    Base.metadata.create_all(engine())
+    # Run the real migrations (not create_all): triggers and data migrations are part of what we test.
+    from alembic import command
+    from alembic.config import Config
+
+    with engine().begin() as c:
+        c.execute(text("drop schema public cascade; create schema public"))
+    cfg = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
+    command.upgrade(cfg, "head")
     yield
     engine().dispose()
 
@@ -154,7 +161,9 @@ def sweep_at(ts: datetime) -> None:
 @pytest.fixture(autouse=True)
 def clean_db() -> Iterator[None]:
     with engine().begin() as c:
-        tables = ", ".join(t.name for t in Base.metadata.sorted_tables)
+        tables = ", ".join(
+            t.name for t in Base.metadata.sorted_tables
+        )  # TRUNCATE is allowed; UPDATE/DELETE are not
         c.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
     clear_calendar_cache()
     with unit_of_work() as s:

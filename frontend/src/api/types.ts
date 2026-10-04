@@ -114,6 +114,7 @@ export interface IncidentDetail extends Incident {
     loads: LoadRow[];
   };
   series?: SeriesPoint[];
+  evaluations?: EvaluationRef[];
 }
 
 export interface Brief {
@@ -151,8 +152,44 @@ export interface BoardItem {
   incident_priority: Priority | null;
 }
 
+export interface SystemStatus {
+  healthy: boolean;
+  worker: { alive: boolean; last_beat_age_seconds: number | null; last_tick_age_seconds: number | null; instances: number };
+  queue: { queued: number; oldest_ready_age_seconds: number; failed_24h: number };
+  engine_version: string;
+  app_version: string;
+  shadow_challengers: string[];
+}
+
+export interface EvaluationRef {
+  id: string;
+  trigger: string;
+  evaluated_at: string;
+  engine_version: string;
+  verifiable: boolean;
+}
+
+export interface VerifyResult {
+  verifiable: boolean;
+  reason?: string;
+  snapshot_integrity?: boolean;
+  reproduced?: boolean;
+  recorded_engine?: string;
+  current_engine?: string;
+}
+
+export interface ShadowReport {
+  challenger: string;
+  evaluated: number;
+  agreement: Partial<Record<"both" | "champion_only" | "challenger_only" | "neither", number>>;
+  verdicts: Record<string, number>;
+  truth: null | Record<string, number>;
+  only_challenger: { occurrence_id: string; institution_id: string; institution: string; business_date: string; codes: string[] }[];
+}
+
 export interface Overview {
   as_of: string;
+  system: SystemStatus;
   business_date: string;
   open_incidents: Partial<Record<Priority, number>>;
   today: { expected: number; by_status: Partial<Record<OccStatus, number>> };

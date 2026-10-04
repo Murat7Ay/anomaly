@@ -29,7 +29,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
-import type { Brief, Finding, IncidentDetail, Meta } from "../api/types";
+import type { Brief, EvaluationRef, Finding, IncidentDetail, Meta, VerifyResult } from "../api/types";
 import {
   AiBadge,
   CodeChip,
@@ -183,6 +183,46 @@ function BriefCard({ id, aiEnabled }: { id: string; aiEnabled: boolean }) {
           </Button>
         )}
       </Stack>
+    </Stack>
+  );
+}
+
+function DecisionRecord({ evals }: { evals: EvaluationRef[] }) {
+  const [res, setRes] = useState<Record<string, VerifyResult>>({});
+  const verify = useMutation({
+    mutationFn: (id: string) => api<VerifyResult>(`/evaluations/${id}/verify`, { method: "POST" }),
+    onSuccess: (r, id) => setRes((x) => ({ ...x, [id]: r })),
+  });
+  return (
+    <Stack spacing={1}>
+      <Typography variant="caption" color="text.secondary">
+        Her karar, girdilerinin değişmez bir kopyasıyla saklanır. "Doğrula" kararı bugünkü motorla aynı girdilerden yeniden üretir.
+      </Typography>
+      {evals.slice(0, 6).map((e) => {
+        const r = res[e.id];
+        return (
+          <Stack key={e.id} direction="row" spacing={1} alignItems="center" justifyContent="space-between">
+            <Typography variant="body2">
+              {dateTime(e.evaluated_at)} · {e.trigger} · <code>{e.engine_version}</code>
+            </Typography>
+            {r ? (
+              r.verifiable ? (
+                <Chip
+                  size="small"
+                  color={r.reproduced && r.snapshot_integrity ? "success" : "error"}
+                  label={r.reproduced && r.snapshot_integrity ? "Birebir üretildi" : "Fark var"}
+                />
+              ) : (
+                <Chip size="small" label="Geçmiş aktarım (anlık görüntü yok)" />
+              )
+            ) : (
+              <Button size="small" disabled={!e.verifiable || verify.isPending} onClick={() => verify.mutate(e.id)}>
+                {e.verifiable ? "Doğrula" : "Anlık görüntü yok"}
+              </Button>
+            )}
+          </Stack>
+        );
+      })}
     </Stack>
   );
 }
@@ -381,6 +421,11 @@ export function IncidentPage() {
             <Section title="Analiz ve öneriler">
               <BriefCard id={inc.id} aiEnabled={!!meta.data?.ai_enabled} />
             </Section>
+            {inc.evaluations && inc.evaluations.length > 0 && (
+              <Section title="Karar kaydı">
+                <DecisionRecord evals={inc.evaluations} />
+              </Section>
+            )}
             <Section title="Zaman çizelgesi">
               <Stack spacing={1.25}>
                 {inc.events.map((e, i) => (

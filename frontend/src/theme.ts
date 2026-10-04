@@ -36,6 +36,9 @@ export function makeTheme(mode: PaletteMode) {
       button: { textTransform: "none", fontWeight: 600 },
     },
     components: {
+      MuiCssBaseline: {
+        styleOverrides: (t) => ({ a: { color: t.palette.primary.main, textUnderlineOffset: 2 } }),
+      },
       MuiPaper: { defaultProps: { elevation: 0 }, styleOverrides: { root: { backgroundImage: "none" } } },
       MuiCard: {
         defaultProps: { variant: "outlined" },

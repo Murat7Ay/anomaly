@@ -7,17 +7,16 @@ import uuid
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from loadguard.core import clock
+from loadguard.core.time import ops_today, ops_tz
 from loadguard.db.models import ContractVersion, Incident, Institution, Load, Occurrence, SimTruth
-from loadguard.domain.contract import ContractSpec
+from loadguard.domain.contract_migrations import load_spec
 from loadguard.services.contracts import effective_contract
 
-TZ = ZoneInfo("Europe/Istanbul")
 LABELLED = ("TRUE_POSITIVE", "FALSE_POSITIVE", "EXPECTED_EVENT", "NEW_NORMAL")
 EXPECTED_CODES = {
     "MISSING": {"MISSING_DELIVERY"},
@@ -35,13 +34,13 @@ EXPECTED_CODES = {
 
 
 def today() -> date:
-    return clock.now().astimezone(TZ).date()
+    return ops_today()
 
 
 def _minutes(ts: datetime | None) -> int | None:
     if ts is None:
         return None
-    lt = ts.astimezone(TZ)
+    lt = ts.astimezone(ops_tz())
     return lt.hour * 60 + lt.minute
 
 
@@ -123,8 +122,11 @@ def overview(s: Session) -> dict[str, Any]:
             Incident.opened_at >= since30, Incident.resolution.in_((*LABELLED, "DUPLICATE"))
         )
     ).all()
+    from loadguard.services.governance import system_status
+
     return {
         "as_of": now.isoformat(),
+        "system": system_status(s),
         "business_date": d.isoformat(),
         "open_incidents": {p: n for p, n in open_incs},
         "today": {
@@ -269,7 +271,7 @@ def insights(s: Session, days: int = 90) -> dict[str, Any]:
         key = name or "Sistemik"
         by_inst[key][res] += 1
         by_inst[key]["total"] += 1
-        wk = inc.opened_at.astimezone(TZ).date()
+        wk = inc.opened_at.astimezone(ops_tz()).date()
         weekly[(wk - timedelta(days=wk.weekday())).isoformat()] += 1
 
     def precision(c: Counter[str]) -> float | None:
@@ -327,7 +329,7 @@ def simulation_quality(s: Session) -> dict[str, Any] | None:
 
 
 def contract_view(cv: ContractVersion) -> dict[str, Any]:
-    spec = ContractSpec.model_validate(cv.spec)
+    spec = load_spec(cv.spec)
     return {
         "id": str(cv.id),
         "institution_id": str(cv.institution_id),

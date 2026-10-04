@@ -53,7 +53,16 @@ SFTP/API ──▶│  Alım kenarı  │─────────────
 
 **ADR-8 · Zaman.** Tüm zaman damgaları UTC `timestamptz` olarak tutulur. İş günü ve yerel saat hesapları `Europe/Istanbul` ile yapılır. Sistem saati `core/clock.py` üzerinden alınır, bu sayede testler ve replay saati kontrol edebilir.
 
+**ADR-9 · Karar anlık görüntüleri.** Her değerlendirmenin girdileri (sözleşme, takvim penceresi, dosyalar, kullanılan geçmiş, saat) içerik adresli olarak saklanır. Geçmiş sonradan değişse de (etiketler, yeni normal, takvim düzeltmesi) kararın kanıtı değişmez. Bkz. LONGEVITY.md.
+
+**ADR-10 · Değişmezlik veritabanında zorlanır.** `evaluations`, `audit_log` ve `input_snapshots` tablolarına UPDATE/DELETE trigger ile yasak. Denetim kaydı hash zinciridir; trigger'ı aşan değişiklik de `audit-verify` ile tespit edilir.
+
+**ADR-11 · Model evrimi gölge modda olur.** Challenger'lar aynı girdilerle çalışır ve sonuçları `shadow_results` tablosuna yazılır; hiçbir zaman olay açmaz. Terfi, kalite kapısından geçen bir kod değişikliğidir.
+
+**ADR-12 · Şema evrimi okuma sırasında yapılır (upcasting).** Saklanan JSON yerinde değiştirilmez; hash'ler geçerli kalır.
+
 ## Kalite güvencesi
-- `pytest`: alan birim testleri, Postgres'e karşı entegrasyon testleri (canlı akış, dört göz, sistemik kesinti, YZ güvenlik önlemleri), dedektör kalite kapısı.
+- `pytest`: alan birim testleri, gerçek Alembic migration'larıyla kurulan Postgres'e karşı entegrasyon testleri (canlı akış, dört göz, sistemik kesinti, YZ güvenlik önlemleri, değişmezlik, karar yeniden üretimi), dedektör kalite kapısı.
+- `e2e/`: Playwright ile gerçek tarayıcı ve gerçek stack üzerinde kullanıcı akışları.
 - `mypy --strict`, `ruff`; frontend `tsc --strict`.
 - CI: `.github/workflows/ci.yml`.
