@@ -65,7 +65,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Start the full stack
-        run: docker compose up -d --build --wait api web
+        run: docker compose up -d --build --wait api web worker
       - name: Seed demo data
         run: docker compose run --rm api python -m loadguard.sim.seed --reset
       - name: Wait for a worker heartbeat
