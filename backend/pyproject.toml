@@ -1,47 +1,63 @@
 [build-system]
-requires = ["setuptools>=69.0", "wheel"]
+requires = ["setuptools>=75", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "loadguard-backend"
-version = "0.1.0"
-description = "Deterministic anomaly detection backend for bill debt load monitoring"
-requires-python = ">=3.11"
+name = "loadguard"
+version = "2.0.0"
+description = "Debt-load delivery monitoring for bill collection: explainable detection, case management, advisory AI."
+requires-python = ">=3.12"
 dependencies = [
-  "fastapi==0.110.0",
-  "uvicorn==0.29.0",
-  "pydantic==2.6.4",
-  "pydantic-settings==2.2.1",
-  "sqlalchemy==2.0.30",
-  "alembic==1.13.1",
-  "psycopg[binary]==3.1.18",
-  "celery==5.4.0",
-  "redis==5.0.4",
-  "httpx==0.27.0",
-  "jsonschema==4.22.0",
-  "structlog==24.1.0",
-  "python-dateutil==2.9.0.post0",
-  "numpy==1.26.4",
-  "scipy==1.13.0",
+  "fastapi>=0.115,<1",
+  "uvicorn[standard]>=0.32",
+  "pydantic>=2.9,<3",
+  "pydantic-settings>=2.6",
+  "sqlalchemy>=2.0.36,<2.1",
+  "psycopg[binary]>=3.2",
+  "alembic>=1.14",
+  "numpy>=2.1",
+  "httpx>=0.27",
+  "structlog>=24.4",
+  "pyjwt>=2.9",
+  "anthropic>=1.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-  "pytest==8.2.0",
-  "ruff==0.4.4",
-  "mypy==1.10.0",
-  "types-python-dateutil==2.9.0.20240316",
+  "pytest>=8.3",
+  "ruff>=0.7",
+  "mypy>=1.13",
 ]
 
 [tool.setuptools.packages.find]
-where = ["."]
-include = ["app*"]
+where = ["src"]
 
 [tool.ruff]
-line-length = 100
-target-version = "py311"
+line-length = 110
+target-version = "py312"
+src = ["src", "tests"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP"]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["RUF001", "RUF002", "RUF003", "RUF012", "E501"]  # Turkish text in messages is intentional; class-level type maps are fine
 
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+ignore_missing_imports = true
+mypy_path = "src"
 
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["integration: requires a PostgreSQL database (LOADGUARD_TEST_DATABASE_URL)"]
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Query", "fastapi.Depends", "fastapi.Header"]
+
+[tool.ruff.format]
+quote-style = "double"

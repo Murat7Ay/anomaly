@@ -1,0 +1,74 @@
+name: loadguard
+
+x-backend: &backend
+  image: loadguard/backend:local
+  build: ./backend
+  environment: &backend-env
+    LG_DATABASE_URL: postgresql+psycopg://loadguard:loadguard@db:5432/loadguard
+    LG_ENV: local
+    LG_LOG_JSON: "true"
+    LG_JWT_SECRET: ${LG_JWT_SECRET:-dev-only-change-me-dev-only-change-me}
+    LG_INGEST_API_KEY: ${LG_INGEST_API_KEY:-dev-ingest-key}
+    LG_AI_PROVIDER: ${LG_AI_PROVIDER:-none}
+    LG_AI_BASE_URL: ${LG_AI_BASE_URL:-}
+    LG_AI_MODEL: ${LG_AI_MODEL:-}
+    LG_AI_API_KEY: ${LG_AI_API_KEY:-}
+    LG_NOTIFY_WEBHOOK_URL: ${LG_NOTIFY_WEBHOOK_URL:-}
+    LG_PUBLIC_BASE_URL: http://localhost:8080
+  depends_on:
+    db:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: loadguard
+      POSTGRES_USER: loadguard
+      POSTGRES_PASSWORD: loadguard
+    ports: ["127.0.0.1:55432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U loadguard -d loadguard"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  migrate:
+    <<: *backend
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+
+  api:
+    <<: *backend
+    command: ["uvicorn", "loadguard.api.app:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  worker:
+    <<: *backend
+    command: ["python", "-m", "loadguard.worker.main"]
+    environment:
+      <<: *backend-env
+      LG_SIMULATOR_LIVE: ${LG_SIMULATOR_LIVE:-true}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    build: ./frontend
+    ports: ["127.0.0.1:8080:80"]
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:

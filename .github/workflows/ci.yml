@@ -1,0 +1,54 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: loadguard
+          POSTGRES_PASSWORD: loadguard
+          POSTGRES_DB: loadguard
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U loadguard" --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      LOADGUARD_TEST_DATABASE_URL: postgresql+psycopg://loadguard:loadguard@127.0.0.1:5432/loadguard_test
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: ruff check src tests
+      - run: ruff format --check src tests
+      - run: mypy src
+      - run: pytest -q
+      - name: Migrations apply cleanly
+        env:
+          LG_DATABASE_URL: postgresql+psycopg://loadguard:loadguard@127.0.0.1:5432/loadguard
+        run: alembic upgrade head
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run build
