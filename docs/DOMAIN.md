@@ -4,7 +4,7 @@
 
 ## 1. Problem
 
-Bir tahsilat kuruluşu, elektrik/su/doğalgaz/telekom/kamu gibi **kurumlar** adına fatura tahsil eder. Müşterinin ödeme kanallarında ödeme yapabilmesi için kurumun güncel **borç dosyasını** zamanında ve doğru göndermesi gerekir. Dosyada bir sorun olduğunda bunun maliyeti doğrudan müşteriye yansır:
+Bir tahsilat kuruluşu, elektrik/su/doğalgaz/telekom/kamu gibi **kurumlar** adına fatura tahsil eder. Müşterinin ödeme kanallarında borcunu ödeyebilmesi için kurumun güncel **borç dosyasını** zamanında ve doğru göndermesi gerekir. Dosyada bir sorun olduğunda bunun maliyeti doğrudan müşteriye yansır:
 
 | Ne olur | İş etkisi |
 |---|---|

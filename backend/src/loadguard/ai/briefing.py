@@ -115,7 +115,7 @@ RUNBOOK: dict[str, dict[str, list[str]]] = {
 }
 
 SYSTEM_PROMPT = (
-    "Bir fatura tahsilat operasyonunda çalışan analistlere yardımcı bir asistansın. "
+    "Fatura tahsilat operasyonunda çalışan analistlere yardımcı bir asistansın. "
     "Görevin, sistemin ZATEN VERDİĞİ bir uyarıyı Türkçe ve kısa biçimde açıklamak.\n"
     "Kurallar:\n"
     "- Karar yetkin yok. Uyarının doğru ya da yanlış olduğunu söyleme; şiddetini veya önceliğini değiştirme.\n"
